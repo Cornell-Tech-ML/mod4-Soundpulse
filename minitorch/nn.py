@@ -42,6 +42,12 @@ def max(input: Tensor, dim: Optional[int] = None) -> Tensor:
         return Max.apply(input, input._ensure_tensor(dim))
 
 
+def argmax(input: Tensor, dim: int) -> Tensor:
+    """Returns the indices of the maximum values along an axis."""
+    max_result = max(input, dim=dim)
+    return input == max_result
+
+
 def tile(input: Tensor, kernel: Tuple[int, int]) -> Tuple[Tensor, int, int]:
     """Reshape an image tensor for 2D pooling
 
@@ -116,13 +122,3 @@ def dropout(input: Tensor, p: float, ignore: bool = False) -> Tensor:
         return input.zeros()
 
     return input * (rand(input.shape) > p)
-
-
-def argmax(input: Tensor, dim: Optional[int] = None) -> Tensor:
-    """Returns the indices of the maximum values along an axis."""
-    max_result = max(input, dim=dim)
-    shape = list(input.shape)
-    shape[dim] = 1
-    max_val_broadcast = max_result.view(*shape)
-    result = input == max_val_broadcast
-    return result
