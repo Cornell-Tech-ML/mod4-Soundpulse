@@ -4,6 +4,9 @@ import embeddings
 
 import minitorch
 from datasets import load_dataset
+import os.path
+# Set HOME environment variable for Windows
+os.environ['HOME'] = os.path.expanduser('~')
 
 BACKEND = minitorch.TensorBackend(minitorch.FastOps)
 
@@ -34,8 +37,9 @@ class Conv1d(minitorch.Module):
         self.bias = RParam(1, out_channels, 1)
 
     def forward(self, input):
+        return minitorch.conv1d(input, self.weights.value) + self.bias.value
         # TODO: Implement for Task 4.5.
-        raise NotImplementedError("Need to implement for Task 4.5")
+        #raise NotImplementedError("Need to implement for Task 4.5")
 
 
 class CNNSentimentKim(minitorch.Module):
@@ -61,15 +65,33 @@ class CNNSentimentKim(minitorch.Module):
     ):
         super().__init__()
         self.feature_map_size = feature_map_size
+        self.conv1 = Conv1d(embedding_size, self.feature_map_size, filter_sizes[0])
+        self.conv2 = Conv1d(embedding_size, self.feature_map_size, filter_sizes[1])
+        self.conv3 = Conv1d(embedding_size, self.feature_map_size, filter_sizes[2])
+        self.linear1 = Linear(self.feature_map_size, 1)
+        self.dropout = 0.25
         # TODO: Implement for Task 4.5.
-        raise NotImplementedError("Need to implement for Task 4.5")
+        # raise NotImplementedError("Need to implement for Task 4.5")
 
     def forward(self, embeddings):
         """
         embeddings tensor: [batch x sentence length x embedding dim]
         """
+        embeddings = embeddings.permute(0, 2, 1)
+        batch = embeddings.shape[0]
+        conv_1 = self.conv1.forward(embeddings).relu()
+        conv_2 = self.conv2.forward(embeddings).relu()
+        conv_3 = self.conv3.forward(embeddings).relu()
+
+        h = (minitorch.max(conv_1, dim=2) + minitorch.max(conv_2, dim=2) + minitorch.max(conv_3, dim=2))
+        h = minitorch.dropout(h, p=self.dropout, ignore=not self.training)
+        h = h.view(batch, self.feature_map_size)
+        h = self.linear1.forward(h)
+        h = h.sigmoid().view(batch)
+        return h
+
         # TODO: Implement for Task 4.5.
-        raise NotImplementedError("Need to implement for Task 4.5")
+        #raise NotImplementedError("Need to implement for Task 4.5")
 
 
 # Evaluation helper methods

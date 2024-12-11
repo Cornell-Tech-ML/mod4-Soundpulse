@@ -77,13 +77,12 @@ class Network(minitorch.Module):
     def forward(self, x):
         self.mid = self.conv1.forward(x).relu()
         self.out = self.conv2.forward(self.mid).relu()
-
-        h = self.linear1.forward(minitorch.avgpool2d(self.out, (4, 4)).view(BATCH, 392))
+        h = minitorch.avgpool2d(self.out, (4, 4)).view(BATCH, 392)
+        h = self.linear1.forward(h)
         h = minitorch.dropout(h, p=self.dropout, ignore=not self.training)
 
         h = self.linear2.forward(h)
         h = minitorch.logsoftmax(h, dim=1)
-        print(h)
         return h
 
         # TODO: Implement for Task 4.5.

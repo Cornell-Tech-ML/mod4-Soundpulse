@@ -7,7 +7,6 @@ from numba import njit as _njit
 from .autodiff import Context
 from .tensor import Tensor
 from .tensor_data import (
-    MAX_DIMS,
     Index,
     Shape,
     Strides,
@@ -79,8 +78,8 @@ def _tensor_conv1d(
         reverse (bool): anchor weight at left or right
 
     """
-    batch_, out_channels, out_width = out_shape
-    batch, in_channels, width = input_shape
+    batch_, out_channels, _ = out_shape
+    batch, in_channels, in_width = input_shape
     out_channels_, in_channels_, kw = weight_shape
 
     assert (
@@ -88,28 +87,32 @@ def _tensor_conv1d(
         and in_channels == in_channels_
         and out_channels == out_channels_
     )
+
     s1 = input_strides
     s2 = weight_strides
+    # inners
+    s10, s11, s12 = s1[0], s1[1], s1[2]
+    s20, s21, s22 = s2[0], s2[1], s2[2]
 
-    for i in prange(out_width):
+    for i in prange(out_size):
         accum = 0.0
-        out_index: Index = np.zeros(MAX_DIMS, np.int32)
-        input_index: Index = np.zeros(MAX_DIMS, np.int32)
-        weight_index: Index = np.zeros(MAX_DIMS, np.int32)
+        # for unpacking
+        out_index: Index = np.zeros(3, np.int32)
 
         to_index(i, out_shape, out_index)
+        out_batch, out_channels_idx, out_w_pos = out_index
 
-        for j in range(kw):
-            weight_pos = kw - j - 1 if reverse else j
-            input_pos = i - j if reverse else i + j
+        for c in range(in_channels):
+            for w in range(kw):
+                weight_w_pos = kw - 1 - w if reverse else w
+                input_w_pos = out_w_pos - w if reverse else out_w_pos + w
 
-            if 0 <= input_pos < width:
-                to_index(input_pos, input_shape, input_index)
-                to_index(weight_pos, weight_shape, weight_index)
+                if 0 <= input_w_pos < in_width:
+                    # direct indices manipulation
+                    input_pos = out_batch * s10 + c * s11 + input_w_pos * s12
+                    weight_pos = out_channels_idx * s20 + c * s21 + weight_w_pos * s22
 
-                k = index_to_position(input_index, s1)
-                w = index_to_position(weight_index, s2)
-                accum += input[k] * weight[w]
+                    accum += input[input_pos] * weight[weight_pos]
 
         o = index_to_position(out_index, out_strides)
         out[o] = accum
