@@ -7,7 +7,6 @@ from numba import njit as _njit
 from .autodiff import Context
 from .tensor import Tensor
 from .tensor_data import (
-    MAX_DIMS,
     Index,
     Shape,
     Strides,
@@ -22,6 +21,7 @@ Fn = TypeVar("Fn")
 
 
 def njit(fn: Fn, **kwargs: Any) -> Fn:
+    """Wraps a function with Numba's JIT compiler, setting inline to 'always'."""
     return _njit(inline="always", **kwargs)(fn)  # type: ignore
 
 
@@ -78,8 +78,8 @@ def _tensor_conv1d(
         reverse (bool): anchor weight at left or right
 
     """
-    batch_, out_channels, out_width = out_shape
-    batch, in_channels, width = input_shape
+    batch_, out_channels, _ = out_shape
+    batch, in_channels, in_width = input_shape
     out_channels_, in_channels_, kw = weight_shape
 
     assert (
@@ -87,11 +87,37 @@ def _tensor_conv1d(
         and in_channels == in_channels_
         and out_channels == out_channels_
     )
+
     s1 = input_strides
     s2 = weight_strides
+    # inners
+    s10, s11, s12 = s1[0], s1[1], s1[2]
+    s20, s21, s22 = s2[0], s2[1], s2[2]
 
+    for i in prange(out_size):
+        accum = 0.0
+        # for unpacking
+        out_index: Index = np.zeros(3, np.int32)
+
+        to_index(i, out_shape, out_index)
+        out_batch, out_channels_idx, out_w_pos = out_index
+
+        for c in range(in_channels):
+            for w in range(kw):
+                weight_w_pos = kw - 1 - w if reverse else w
+                input_w_pos = out_w_pos - w if reverse else out_w_pos + w
+
+                if 0 <= input_w_pos < in_width:
+                    # direct indices manipulation
+                    input_pos = out_batch * s10 + c * s11 + input_w_pos * s12
+                    weight_pos = out_channels_idx * s20 + c * s21 + weight_w_pos * s22
+
+                    accum += input[input_pos] * weight[weight_pos]
+
+        o = index_to_position(out_index, out_strides)
+        out[o] = accum
     # TODO: Implement for Task 4.1.
-    raise NotImplementedError("Need to implement for Task 4.1")
+    # raise NotImplementedError("Need to implement for Task 4.1")
 
 
 tensor_conv1d = njit(_tensor_conv1d, parallel=True)
@@ -127,6 +153,23 @@ class Conv1dFun(Function):
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
+        """Computes the backward pass for a 1D convolution operation.
+
+        This method calculates the gradients of the loss with respect to the input tensor and the weight tensor
+        based on the gradient of the loss with respect to the output tensor (grad_output).
+
+        Args:
+        ----
+            ctx (Context): Context object containing saved tensors for backward computation.
+            grad_output (Tensor): Gradient of the loss with respect to the output of the convolution.
+
+        Returns:
+        -------
+            Tuple[Tensor, Tensor]: A tuple containing:
+                                    - Gradient of the loss with respect to the input tensor.
+                                    - Gradient of the loss with respect to the weight tensor.
+
+        """
         input, weight = ctx.saved_values
         batch, in_channels, w = input.shape
         out_channels, in_channels, kw = weight.shape
@@ -219,8 +262,44 @@ def _tensor_conv2d(
     s10, s11, s12, s13 = s1[0], s1[1], s1[2], s1[3]
     s20, s21, s22, s23 = s2[0], s2[1], s2[2], s2[3]
 
+    for i in prange(out_size):
+        accum = 0.0
+        # for unpacking
+        out_index: Index = np.zeros(4, np.int32)
+
+        to_index(i, out_shape, out_index)
+        out_batch, out_channels_idx, out_h_pos, out_w_pos = out_index
+
+        for c in range(in_channels):
+            for w in range(kw):
+                for h in range(kh):
+                    weight_h_pos = kh - 1 - h if reverse else h
+                    weight_w_pos = kw - 1 - w if reverse else w
+                    input_w_pos = out_w_pos - w if reverse else out_w_pos + w
+                    input_h_pos = out_h_pos - h if reverse else out_h_pos + h
+
+                    if 0 <= input_w_pos < width and 0 <= input_h_pos < height:
+                        # direct indices manipulation
+                        input_pos = (
+                            out_batch * s10
+                            + c * s11
+                            + input_h_pos * s12
+                            + input_w_pos * s13
+                        )
+                        weight_pos = (
+                            out_channels_idx * s20
+                            + c * s21
+                            + weight_h_pos * s22
+                            + weight_w_pos * s23
+                        )
+
+                        accum += input[input_pos] * weight[weight_pos]
+
+        o = index_to_position(out_index, out_strides)
+        out[o] = accum
+
     # TODO: Implement for Task 4.2.
-    raise NotImplementedError("Need to implement for Task 4.2")
+    # raise NotImplementedError("Need to implement for Task 4.2")
 
 
 tensor_conv2d = njit(_tensor_conv2d, parallel=True, fastmath=True)
@@ -254,6 +333,23 @@ class Conv2dFun(Function):
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
+        """Computes the backward pass for a 2D convolution operation.
+
+        This method calculates the gradients of the loss with respect to the input tensor and the weight tensor
+        based on the gradient of the loss with respect to the output tensor (grad_output).
+
+        Args:
+        ----
+            ctx (Context): Context object containing saved tensors for backward computation.
+            grad_output (Tensor): Gradient of the loss with respect to the output of the convolution.
+
+        Returns:
+        -------
+            Tuple[Tensor, Tensor]: A tuple containing:
+                                    - Gradient of the loss with respect to the input tensor.
+                                    - Gradient of the loss with respect to the weight tensor.
+
+        """
         input, weight = ctx.saved_values
         batch, in_channels, h, w = input.shape
         out_channels, in_channels, kh, kw = weight.shape

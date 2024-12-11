@@ -31,8 +31,58 @@ def test_avg(t: Tensor) -> None:
 @pytest.mark.task4_4
 @given(tensors(shape=(2, 3, 4)))
 def test_max(t: Tensor) -> None:
-    # TODO: Implement for Task 4.4.
-    raise NotImplementedError("Need to implement for Task 4.4")
+    dim = 2
+    q = minitorch.max(t, dim)
+    assert q.shape == (2, 3, 1)
+    for i in range(2):
+        for j in range(3):
+            expected = max([t[i, j, k] for k in range(4)])
+            assert_close(q[i, j, 0], expected)
+
+    dim = 1
+    q = minitorch.max(t, dim)
+    assert q.shape == (2, 1, 4)
+    for i in range(2):
+        for j in range(4):
+            expected = max([t[i, k, j] for k in range(3)])
+            assert_close(q[i, 0, j], expected)
+
+    dim = 0
+    q = minitorch.max(t, dim)
+    assert q.shape == (1, 3, 4)
+    for i in range(3):
+        for j in range(4):
+            expected = max([t[k, i, j] for k in range(2)])
+            assert_close(q[0, i, j], expected)
+
+    # Test max over all elements (dim=None)
+    q = minitorch.max(t, dim=None)
+    expected = max([t[i] for i in t._tensor.indices()])
+    assert_close(q[0], expected)
+
+
+@pytest.mark.task4_4
+def test_max_backward() -> None:
+    # Test dim=None backprop manually.
+    # Define a 2D tensor
+    backend = minitorch.TensorBackend(minitorch.FastOps)
+    t = Tensor.make(
+        [1.0, 9.0, 0.0, 5.0, 3.0, 8.0, 6.0, -1.0, 9.0], (3, 3), (3, 1), backend=backend
+    )
+    t.requires_grad_(True)
+
+    # Run max and backward with grad_output
+    out = minitorch.max(t, dim=1)
+    grad_output = minitorch.tensor([1.0, 1.0, 1.0])
+    out.backward(grad_output)
+
+    # Check against expected gradients
+    expected_grad = [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
+
+    assert t.grad is not None
+    for i in range(3):
+        for j in range(3):
+            assert_close(t.grad[i, j], expected_grad[i][j])
 
 
 @pytest.mark.task4_4
